@@ -1,13 +1,13 @@
 """
-Clau-AI — Servicio de generación de propuestas PDF
-Lut Parra Consultoría de Liderazgo
+Clau-AI â Servicio de generaciÃ³n de propuestas PDF
+Lut Parra ConsultorÃ­a de Liderazgo
 
 POST /generar
   Body JSON: { datos de propuesta }
   Respuesta: { "pdf_base64": "...", "filename": "Propuesta_...pdf" }
 
 GET /ping
-  Respuesta: { "ok": true }  — para verificar que el servicio está activo
+  Respuesta: { "ok": true }  â para verificar que el servicio estÃ¡ activo
 """
 
 import os
@@ -55,17 +55,17 @@ def generar():
             },
             'contexto_cliente': data.get('contexto_cliente', ''),
             'inversion': {
-                'sesiones':       data.get('sesiones', '1 sesión'),
+                'sesiones':       data.get('sesiones', '1 sesiÃ³n'),
                 'participantes':  f"{data['participantes']} participantes",
-                'total':          data['precio_total'],
-                'total_iva':      data['precio_total'] + ' + I.V.A.',
+                'total':          str(data['precio_total']),
+                'total_iva':      str(data['precio_total']) + ' + I.V.A.',
                 'modalidad_pago': data['forma_pago'],
                 'notas':          data.get('notas', ''),
             },
             'siguiente_paso': [
-                'Confirmar fecha de impartición',
+                'Confirmar fecha de imparticiÃ³n',
                 'Firmar carta de acuerdo',
-                'Agendar sesión de coordinación',
+                'Agendar sesiÃ³n de coordinaciÃ³n',
             ],
             'fecha': data.get('fecha', _fecha_hoy()),
         }
@@ -96,7 +96,7 @@ def generar():
         })
 
     except KeyError as e:
-        return jsonify({'error': f'Programa no encontrado en el catálogo: {e}'}), 400
+        return jsonify({'error': f'Programa no encontrado en el catÃ¡logo: {e}'}), 400
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
