@@ -1,28 +1,81 @@
 """
-Clau-AI â Servicio de generaciÃ³n de propuestas PDF
-Lut Parra ConsultorÃ­a de Liderazgo
+Clau-AI — Servicio de generación de propuestas PDF
+Lut Parra Consultoría de Liderazgo
 
 POST /generar
   Body JSON: { datos de propuesta }
-  Respuesta: { "pdf_base64": "...", "filename": "Propuesta_...pdf" }
+  Respuesta: { "pdf_base64": "...", "pdf_url": "https://...", "filename": "Propuesta_...pdf" }
+
+GET /files/<file_id>
+  Descarga el PDF generado por su UUID (disponible ~30 min)
 
 GET /ping
-  Respuesta: { "ok": true }  â para verificar que el servicio estÃ¡ activo
+  Respuesta: { "ok": true }  — para verificar que el servicio está activo
 """
 
 import os
 import base64
 import tempfile
 import traceback
-from flask import Flask, request, jsonify
+import uuid
+import time
+import threading
+from flask import Flask, request, jsonify, send_file, abort
+from io import BytesIO
 from generar_propuesta_v2 import generar_pdf, CATALOGO
 
 app = Flask(__name__)
 
+# ── In-memory PDF store ──────────────────────────────────────────────────────
+# { file_id: { 'data': bytes, 'filename': str, 'expires': float } }
+_pdf_store: dict = {}
+_store_lock = threading.Lock()
+PDF_TTL_SECONDS = 1800  # 30 minutes
+
+
+def _cleanup_expired():
+    """Remove PDFs that have passed their TTL."""
+    now = time.time()
+    with _store_lock:
+        expired = [fid for fid, v in _pdf_store.items() if v['expires'] < now]
+        for fid in expired:
+            del _pdf_store[fid]
+
+
+def _store_pdf(pdf_bytes: bytes, filename: str) -> str:
+    """Store PDF bytes and return the file_id."""
+    _cleanup_expired()
+    file_id = str(uuid.uuid4())
+    with _store_lock:
+        _pdf_store[file_id] = {
+            'data':     pdf_bytes,
+            'filename': filename,
+            'expires':  time.time() + PDF_TTL_SECONDS,
+        }
+    return file_id
+
+
+# ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.route('/ping', methods=['GET'])
 def ping():
     return jsonify({'ok': True, 'programas': list(CATALOGO.keys())})
+
+
+@app.route('/files/<file_id>', methods=['GET'])
+def serve_file(file_id):
+    """Serve a previously-generated PDF by its UUID."""
+    _cleanup_expired()
+    with _store_lock:
+        entry = _pdf_store.get(file_id)
+    if not entry:
+        abort(404)
+    return send_file(
+        BytesIO(entry['data']),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=entry['filename'],
+    )
 
 
 @app.route('/generar', methods=['POST'])
@@ -55,17 +108,17 @@ def generar():
             },
             'contexto_cliente': data.get('contexto_cliente', ''),
             'inversion': {
-                'sesiones':       data.get('sesiones', '1 sesiÃ³n'),
+                'sesiones':       data.get('sesiones', '1 sesión'),
                 'participantes':  f"{data['participantes']} participantes",
-                'total':          str(data['precio_total']),
-                'total_iva':      str(data['precio_total']) + ' + I.V.A.',
+                'total':          data['precio_total'],
+                'total_iva':      data['precio_total'] + ' + I.V.A.',
                 'modalidad_pago': data['forma_pago'],
                 'notas':          data.get('notas', ''),
             },
             'siguiente_paso': [
-                'Confirmar fecha de imparticiÃ³n',
+                'Confirmar fecha de impartición',
                 'Firmar carta de acuerdo',
-                'Agendar sesiÃ³n de coordinaciÃ³n',
+                'Agendar sesión de coordinación',
             ],
             'fecha': data.get('fecha', _fecha_hoy()),
         }
@@ -76,27 +129,34 @@ def generar():
 
         generar_pdf(propuesta_data, tmp_path)
 
-        # Leer y codificar en base64
+        # Leer bytes del PDF
         with open(tmp_path, 'rb') as f:
             pdf_bytes = f.read()
         os.unlink(tmp_path)
-
-        pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
 
         # Nombre del archivo
         empresa_slug = data['empresa'].replace(' ', '_')[:30]
         programa_slug = data['programa_key']
         filename = f'Propuesta_{programa_slug}_{empresa_slug}.pdf'
 
+        # Codificar en base64
+        pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
+
+        # Guardar en memoria y generar URL pública
+        file_id = _store_pdf(pdf_bytes, filename)
+        base_url = os.environ.get('BASE_URL', 'https://clau-propuestas.onrender.com')
+        pdf_url = f'{base_url}/files/{file_id}'
+
         return jsonify({
             'ok':         True,
             'pdf_base64': pdf_b64,
+            'pdf_url':    pdf_url,
             'filename':   filename,
             'size_kb':    round(len(pdf_bytes) / 1024, 1),
         })
 
     except KeyError as e:
-        return jsonify({'error': f'Programa no encontrado en el catÃ¡logo: {e}'}), 400
+        return jsonify({'error': f'Programa no encontrado en el catálogo: {e}'}), 400
     except Exception as e:
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
