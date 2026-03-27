@@ -19,10 +19,17 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 # ââ FUENTES ââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-pdfmetrics.registerFont(TTFont("DV",    os.path.join(os.path.dirname(__file__), "fonts", "DejaVuSans.ttf")))
-pdfmetrics.registerFont(TTFont("DV-B",  os.path.join(os.path.dirname(__file__), "fonts", "DejaVuSans-Bold.ttf")))
-pdfmetrics.registerFont(TTFont("DV-I",  os.path.join(os.path.dirname(__file__), "fonts", "DejaVuSans-Oblique.ttf")))
-pdfmetrics.registerFont(TTFont("DV-BI", os.path.join(os.path.dirname(__file__), "fonts", "DejaVuSans-BoldOblique.ttf")))
+def _font_path(name):
+    """Usa DejaVu del sistema (apt) si existe; si no, carpeta local fonts/."""
+    system = "/usr/share/fonts/truetype/dejavu/" + name
+    if os.path.exists(system):
+        return system
+    return os.path.join(os.path.dirname(__file__), "fonts", name)
+
+pdfmetrics.registerFont(TTFont("DV",    _font_path("DejaVuSans.ttf")))
+pdfmetrics.registerFont(TTFont("DV-B",  _font_path("DejaVuSans-Bold.ttf")))
+pdfmetrics.registerFont(TTFont("DV-I",  _font_path("DejaVuSans-Oblique.ttf")))
+pdfmetrics.registerFont(TTFont("DV-BI", _font_path("DejaVuSans-BoldOblique.ttf")))
 
 # ââ COLORES DE MARCA âââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 NAVY        = HexColor('#1B2A4A')   # fondo azul oscuro
@@ -824,14 +831,14 @@ def pagina_inversion(c, data):
     col2_x   = PW / 2 + 8
     label_w  = 94
 
-    def draw_conditions(items, ox, oy):
+    def draw_conditions(items, ox, oy, cols=38):
         for lbl, val in items:
             c.setFillColor(RED)
             c.setFont("DV-B", 9)
             c.drawString(ox, oy, lbl)
             c.setFillColor(GRAY_DARK)
             c.setFont("DV", 9)
-            vlines = wrap(val, 40)
+            vlines = wrap(val, cols)
             for i, vl in enumerate(vlines):
                 c.drawString(ox + label_w, oy - i * 12, vl)
             oy -= len(vlines) * 12 + 10
@@ -839,8 +846,8 @@ def pagina_inversion(c, data):
 
     yl = y
     yr = y
-    yl = draw_conditions(col_l, 40,      yl)
-    yr = draw_conditions(col_r, col2_x,  yr)
+    yl = draw_conditions(col_l, 40,      yl, cols=38)
+    yr = draw_conditions(col_r, col2_x,  yr, cols=30)
 
     y = min(yl, yr) - 14
 
